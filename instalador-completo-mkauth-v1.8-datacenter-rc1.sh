@@ -1803,7 +1803,7 @@ radacct_special_lock_active() {
         FROM information_schema.PROCESSLIST
         WHERE DB='mkradius'
           AND (
-                INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+`?(radacct|radippool)`?[[:space:]]+COLLATE[[:space:]]*='
+                INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+[[:x60:]]?(radacct|radippool)[[:x60:]]?[[:space:]]+COLLATE[[:space:]]*='
              OR (
                   INFO REGEXP 'radacct|radippool'
                   AND STATE LIKE '%metadata lock%'
@@ -2424,14 +2424,14 @@ protect_sql(){
 alter_ids(){
     mysql_exec -e "SELECT ID FROM information_schema.PROCESSLIST
     WHERE DB='mkradius' AND COMMAND='Query'
-      AND INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+`?(radacct|radippool)`?[[:space:]]+COLLATE[[:space:]]*='
+      AND INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+[[:x60:]]?(radacct|radippool)[[:x60:]]?[[:space:]]+COLLATE[[:space:]]*='
     ORDER BY TIME DESC;"
 }
 alter_detail(){
     mysql_exec -e "SELECT CONCAT('ID=',ID,' | TIME=',TIME,'s | STATE=',COALESCE(STATE,''),' | INFO=',LEFT(COALESCE(INFO,''),300))
     FROM information_schema.PROCESSLIST
     WHERE DB='mkradius' AND COMMAND='Query'
-      AND INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+`?(radacct|radippool)`?[[:space:]]+COLLATE[[:space:]]*='
+      AND INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+[[:x60:]]?(radacct|radippool)[[:x60:]]?[[:space:]]+COLLATE[[:space:]]*='
     ORDER BY TIME DESC LIMIT 1;"
 }
 metadata_count(){
@@ -2442,7 +2442,7 @@ metadata_count(){
 metadata_max_time(){
     mysql_exec -e "SELECT COALESCE(MAX(TIME),0) FROM information_schema.PROCESSLIST
     WHERE DB='mkradius'
-      AND (INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+`?(radacct|radippool)`?[[:space:]]+COLLATE[[:space:]]*='
+      AND (INFO REGEXP '^ALTER[[:space:]]+TABLE[[:space:]]+[[:x60:]]?(radacct|radippool)[[:x60:]]?[[:space:]]+COLLATE[[:space:]]*='
         OR (INFO REGEXP 'radacct|radippool' AND
            (STATE LIKE '%metadata lock%' OR STATE LIKE '%table level lock%' OR STATE LIKE '%Waiting for table%')));"
 }
