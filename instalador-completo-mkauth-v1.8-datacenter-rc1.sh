@@ -1772,8 +1772,11 @@ controlled_mysql_recovery() {
     log "Serviço FreeRADIUS: $rs"
 
     if mysql_ok; then
-        log "MySQL voltou antes da recuperacao emergencial; nenhum processo encerrado."
-        return 0
+        log "MySQL respondeu antes da recuperacao emergencial; validando FreeRADIUS."
+        if radius_ok; then return 0; fi
+        timeout -k 5 30 service "$rs" start >> "$LOG" 2>&1 || true
+        wait_radius
+        return $?
     fi
 
     timeout -k 5 20 service "$rs" stop >> "$LOG" 2>&1 || true
@@ -1797,8 +1800,10 @@ controlled_mysql_recovery() {
 
         log "Processo MySQL permaneceu preso: $mysql_processes"
         if mysql_ok; then
-            log "MySQL respondeu durante a verificacao; SIGKILL cancelado."
-            return 0
+            log "MySQL respondeu durante a verificacao; SIGKILL cancelado; restaurando FreeRADIUS."
+            timeout -k 5 30 service "$rs" start >> "$LOG" 2>&1 || true
+            wait_radius
+            return $?
         fi
         log "EMERGENCIA: SIGTERM nao encerrou o MySQL; aplicando SIGKILL somente no daemon MySQL."
         pkill -KILL -x mysqld 2>/dev/null || true
