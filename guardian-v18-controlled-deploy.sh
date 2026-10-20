@@ -14,7 +14,7 @@ LOCKS=(/var/run/check_backup_freeradius.lock /var/run/mkauth_mysql_radius_guardi
 (cd "$SNAP" && sha256sum -c SHA256SUMS >/dev/null) || { echo "ERRO: backup invalido"; exit 1; }
 # Refuse activation if destructive recovery has been explicitly enabled.
 if [[ -f /etc/default/check_backup_freeradius ]] &&
-   grep -Eq '^[[:space:]]*(export[[:space:]]+)?GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=[[:space:]]*["\x27]?sim(["\x27]|[[:space:]]|$)' /etc/default/check_backup_freeradius; then
+   grep -Eq '^[[:space:]]*(export[[:space:]]+)?GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=' /etc/default/check_backup_freeradius; then
  echo "ERRO: recuperacao destrutiva habilitada no arquivo de configuracao; desabilite antes da ativacao."
  exit 1
 fi
