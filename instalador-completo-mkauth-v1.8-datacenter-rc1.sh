@@ -196,6 +196,7 @@ done
     printf 'TELEGRAM_CHAT_ID=%q\n' "$TELEGRAM_CHAT_ID"
     printf 'COOLDOWN_SECONDS=%q\n' "$COOLDOWN_SECONDS"
     printf 'GUARDIAN_ALLOW_SERVICE_RESTART=%q\n' "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}"
+    printf 'GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL=%q\n' "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-sim}"
     printf 'GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=%q\n' "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}"
 } > "${CONFIG}.new.$"
 chmod 600 "${CONFIG}.new.$"
@@ -1755,8 +1756,8 @@ controlled_mysql_recovery() {
             return 2
         fi
     fi
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
-        log "MODO SEGURO: recuperacao com parada forcada do MySQL desabilitada."
+    if [ "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-nao}" != "sim" ]; then
+        log "MODO SEGURO: encerramento emergencial do MySQL desabilitado."
         return 1
     fi
     local ms=""
@@ -1770,15 +1771,21 @@ controlled_mysql_recovery() {
     log "Serviço MySQL: $ms"
     log "Serviço FreeRADIUS: $rs"
 
-    service "$rs" stop >> "$LOG" 2>&1 || true
-    service "$ms" stop >> "$LOG" 2>&1 || true
+    if mysql_ok; then
+        log "MySQL voltou antes da recuperacao emergencial; nenhum processo encerrado."
+        return 0
+    fi
 
-    sleep 8
+    timeout -k 5 20 service "$rs" stop >> "$LOG" 2>&1 || true
+    timeout -k 5 30 service "$ms" stop >> "$LOG" 2>&1 || true
 
-    pkill -TERM mysqld 2>/dev/null || true
-    pkill -TERM mariadbd 2>/dev/null || true
-
-    sleep 10
+    if ! mysql_ok; then
+        log "MySQL ainda indisponivel; enviando SIGTERM para daemon e wrapper."
+        pkill -TERM -x mysqld_safe 2>/dev/null || true
+        pkill -TERM -x mysqld 2>/dev/null || true
+        pkill -TERM -x mariadbd 2>/dev/null || true
+        sleep 15
+    fi
 
     if pgrep -x mysqld >/dev/null 2>&1 ||
        pgrep -x mariadbd >/dev/null 2>&1; then
@@ -1789,10 +1796,18 @@ controlled_mysql_recovery() {
         )"
 
         log "Processo MySQL permaneceu preso: $mysql_processes"
-        log "MODO SEGURO: processo MySQL persistente; KILL -9 proibido. Intervencao manual necessaria."
-        return 1
-
-        sleep 4
+        if mysql_ok; then
+            log "MySQL respondeu durante a verificacao; SIGKILL cancelado."
+            return 0
+        fi
+        log "EMERGENCIA: SIGTERM nao encerrou o MySQL; aplicando SIGKILL somente no daemon MySQL."
+        pkill -KILL -x mysqld 2>/dev/null || true
+        pkill -KILL -x mariadbd 2>/dev/null || true
+        sleep 5
+        if pgrep -x mysqld >/dev/null 2>&1 || pgrep -x mariadbd >/dev/null 2>&1; then
+            log "CRITICO: daemon ainda presente apos SIGKILL; nao iniciar segunda instancia."
+            return 1
+        fi
     fi
 
     if ! pgrep -x mysqld >/dev/null 2>&1 &&
@@ -1809,7 +1824,7 @@ controlled_mysql_recovery() {
         chmod 755 /var/run/mysqld
     fi
 
-    service "$ms" start >> "$LOG" 2>&1 || true
+    timeout -k 5 120 service "$ms" start >> "$LOG" 2>&1 || true
 
     if ! wait_mysql "$MYSQL_START_TIMEOUT"; then
         log "CRÍTICO: MySQL não respondeu após recuperação controlada."
@@ -2117,13 +2132,13 @@ $evidence_dir"
     sleep 3
 
     log "Reiniciando serviço $ms."
-    service "$ms" restart >> "$LOG" 2>&1 || true
+    timeout -k 5 120 service "$ms" restart >> "$LOG" 2>&1 || true
 
     if ! wait_mysql "$MYSQL_START_TIMEOUT"; then
         log "Restart simples do MySQL não recuperou. Aplicando recuperação controlada."
 
-        if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
-            log "Recuperacao agressiva nao autorizada; servicos ja receberam tentativa de restart simples."
+        if [ "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-nao}" != "sim" ]; then
+            log "Recuperacao emergencial MySQL nao autorizada; restart simples ja tentado."
             service "$rs" start >> "$LOG" 2>&1 || true
             return 1
         fi
