@@ -1,0 +1,28 @@
+name: Guardian v1.8 candidate syntax
+on:
+  pull_request:
+    paths:
+      - 'instalador-completo-mkauth-v1.8-datacenter-rc1.sh'
+      - '.github/workflows/guardian-v18-syntax.yml'
+  workflow_dispatch:
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer and embedded scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=instalador-completo-mkauth-v1.8-datacenter-rc1.sh
+          bash -n "$file"
+          awk '/^cat > "\$SCRIPT" <<\x27EOF_WATCHDOG\x27/{p=1;next} p && /^EOF_WATCHDOG$/{exit} p{print}' "$file" > /tmp/watchdog.sh
+          awk '/^cat > "\$MYSQL_GUARDIAN" <<\x27GUARDIAN17\x27/{p=1;next} p && /^GUARDIAN17$/{exit} p{print}' "$file" > /tmp/mysql_guardian.sh
+          awk '/^cat > "\$BACKUP_GUARDIAN" <<\x27GUARDIAN16\x27/{p=1;next} p && /^GUARDIAN16$/{exit} p{print}' "$file" > /tmp/backup_guardian.sh
+          test -s /tmp/mysql_guardian.sh
+          test -s /tmp/backup_guardian.sh
+          bash -n /tmp/mysql_guardian.sh
+          bash -n /tmp/backup_guardian.sh
+          grep -q 'radippool' /tmp/backup_guardian.sh
+          grep -q 'mkauth-guardian-global-recovery.lock' /tmp/mysql_guardian.sh
+          grep -q 'mkauth-guardian-global-recovery.lock' /tmp/backup_guardian.sh
