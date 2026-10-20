@@ -195,9 +195,12 @@ done
     printf 'TELEGRAM_BOT=%q\n' "$TELEGRAM_BOT"
     printf 'TELEGRAM_CHAT_ID=%q\n' "$TELEGRAM_CHAT_ID"
     printf 'COOLDOWN_SECONDS=%q\n' "$COOLDOWN_SECONDS"
-    printf 'GUARDIAN_ALLOW_SERVICE_RESTART=%q\n' "sim"
-    printf 'GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=%q\n' "nao"
-} > "$CONFIG"
+    printf 'GUARDIAN_ALLOW_SERVICE_RESTART=%q\n' "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}"
+    printf 'GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=%q\n' "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}"
+} > "${CONFIG}.new.$"
+chmod 600 "${CONFIG}.new.$"
+chown root:root "${CONFIG}.new.$"
+mv -f "${CONFIG}.new.$" "$CONFIG"
 
 chown root:root "$CONFIG"
 chmod 600 "$CONFIG"
@@ -2119,6 +2122,11 @@ $evidence_dir"
     if ! wait_mysql "$MYSQL_START_TIMEOUT"; then
         log "Restart simples do MySQL não recuperou. Aplicando recuperação controlada."
 
+        if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+            log "Recuperacao agressiva nao autorizada; servicos ja receberam tentativa de restart simples."
+            service "$rs" start >> "$LOG" 2>&1 || true
+            return 1
+        fi
         if ! controlled_mysql_recovery; then
             log "CRÍTICO: recuperação controlada também falhou."
             return 1
