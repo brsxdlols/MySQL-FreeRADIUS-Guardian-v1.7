@@ -821,6 +821,10 @@ recover_mysql_radius() {
         return 0
     fi
 
+    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+        log "MODO SEGURO: falha detectada, restart automatico MySQL/Radius bloqueado."
+        return 1
+    fi
     log "======================================================"
     log "ERRO CRÍTICO DETECTADO"
     log "MK-AUTH: $MKAUTH_NAME"
@@ -2043,6 +2047,10 @@ functional_queue_recovery() {
     ms="$(mysql_service)"
     rs="$(radius_service)"
 
+    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+        log "MODO SEGURO: fila funcional suspeita; reinicios automaticos bloqueados."
+        return 1
+    fi
     evidence_dir="$(collect_queue_evidence)"
 
     log "======================================================"
