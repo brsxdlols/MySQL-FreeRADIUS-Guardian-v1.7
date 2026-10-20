@@ -2634,11 +2634,11 @@ else
 fi
 
 echo
-echo "Executando validações seguras..."
-timeout 120 "$MYSQL_GUARDIAN"; RC17=$?
-timeout 120 "$BACKUP_GUARDIAN"; RC16=$?
-echo "Retorno MySQL Guardian v1.8-rc1: $RC17"
-echo "Retorno Backup Guardian v1.8-rc1: $RC16"
+echo "Validacao estatica dos monitores (sem execucao):"
+bash -n "$WATCHDOG" || { echo "ERRO: sintaxe watchdog"; exit 1; }
+bash -n "$MYSQL_GUARDIAN" || { echo "ERRO: sintaxe MySQL Guardian"; exit 1; }
+bash -n "$BACKUP_GUARDIAN" || { echo "ERRO: sintaxe Backup Guardian"; exit 1; }
+echo "OK: nenhum Guardian executado durante instalacao."
 
 restart_cron
 CRON_WAS_STOPPED=0
