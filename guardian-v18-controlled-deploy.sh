@@ -31,7 +31,13 @@ flock -n 7 || { echo "Recuperacao em andamento; cancelado"; exit 1; }
 exec 10>"${LOCKS[0]}"
 exec 11>"${LOCKS[1]}"
 exec 12>"${LOCKS[2]}"
-flock -n 10 && flock -n 11 && flock -n 12 || { echo "Guardian em execucao; tente novamente"; exit 1; }
+echo "Aguardando monitores ativos liberarem locks (ate 180 segundos)..."
+for fd in 10 11 12; do
+  if ! flock -w 180 "$fd"; then
+    echo "ERRO: lock do monitor FD $fd ocupado por mais de 180s; abortando sem alteracoes."
+    exit 1
+  fi
+done
 WORK="$BASE/deploy-$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -m 700 "$WORK"
 APPLIED=0
