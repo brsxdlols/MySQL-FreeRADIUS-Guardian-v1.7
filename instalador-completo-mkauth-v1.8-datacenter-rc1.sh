@@ -195,7 +195,13 @@ done
     printf 'TELEGRAM_BOT=%q\n' "$TELEGRAM_BOT"
     printf 'TELEGRAM_CHAT_ID=%q\n' "$TELEGRAM_CHAT_ID"
     printf 'COOLDOWN_SECONDS=%q\n' "$COOLDOWN_SECONDS"
-} > "$CONFIG"
+    printf 'GUARDIAN_ALLOW_SERVICE_RESTART=%q\n' "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}"
+    printf 'GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL=%q\n' "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-sim}"
+    printf 'GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=%q\n' "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}"
+} > "${CONFIG}.new.$"
+chmod 600 "${CONFIG}.new.$"
+chown root:root "${CONFIG}.new.$"
+mv -f "${CONFIG}.new.$" "$CONFIG"
 
 chown root:root "$CONFIG"
 chmod 600 "$CONFIG"
@@ -221,7 +227,8 @@ chmod 640 "$MONITOR_LOG" "$CRON_LOG"
 # SCRIPT DO MONITOR
 # ==========================================================
 
-cat > "$SCRIPT" <<'MONITOR'
+MONITOR_STAGE="$(mktemp "${SCRIPT}.stage.XXXXXXXX")" || exit 1
+cat > "$MONITOR_STAGE" <<'MONITOR'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -834,8 +841,8 @@ recover_mysql_radius() {
         return 0
     fi
 
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
-        log "MODO SEGURO: falha detectada, restart automatico MySQL/Radius bloqueado."
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
+        log "MODO SEGURO: reinicio automatico de servicos desabilitado."
         return 1
     fi
     log "======================================================"
@@ -1050,18 +1057,20 @@ fi
 exit 0
 MONITOR
 
-chown root:root "$SCRIPT"
-chmod 700 "$SCRIPT"
+chown root:root "$MONITOR_STAGE"
+chmod 700 "$MONITOR_STAGE"
 
 # ==========================================================
 # VALIDAR MONITOR
 # ==========================================================
 
-if ! bash -n "$SCRIPT"; then
+if ! test "$(wc -c < "$MONITOR_STAGE")" -gt 12000 || ! bash -n "$MONITOR_STAGE"; then
     echo
-    echo "ERRO: falha de sintaxe no monitor."
+    echo "ERRO: monitor incompleto ou sintaxe invalida."
+    rm -f "$MONITOR_STAGE"
     exit 1
 fi
+mv -f "$MONITOR_STAGE" "$SCRIPT" || exit 1
 
 # ==========================================================
 # CRON A CADA 30 SEGUNDOS
@@ -1370,7 +1379,8 @@ chown root:root \
 chmod 750 "$MYSQL_STATE" "$BACKUP_STATE"
 chmod 640 "$MYSQL_LOG" "$MYSQL_RUN_LOG" "$BACKUP_LOG" "$BACKUP_RUN_LOG"
 
-cat > "$MYSQL_GUARDIAN" <<'GUARDIAN17'
+MYSQL_STAGE="$(mktemp "${MYSQL_GUARDIAN}.stage.XXXXXXXX")" || exit 1
+cat > "$MYSQL_STAGE" <<'GUARDIAN17'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -1717,7 +1727,7 @@ cooldown_active() {
 }
 
 restart_radius() {
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
         log "MODO SEGURO: restart FreeRADIUS nao autorizado."
         return 1
     fi
@@ -1746,8 +1756,8 @@ controlled_mysql_recovery() {
             return 2
         fi
     fi
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
-        log "MODO SEGURO: recuperacao com parada forcada do MySQL desabilitada."
+    if [ "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-nao}" != "sim" ]; then
+        log "MODO SEGURO: encerramento emergencial do MySQL desabilitado."
         return 1
     fi
     local ms=""
@@ -1761,15 +1771,21 @@ controlled_mysql_recovery() {
     log "Serviço MySQL: $ms"
     log "Serviço FreeRADIUS: $rs"
 
-    service "$rs" stop >> "$LOG" 2>&1 || true
-    service "$ms" stop >> "$LOG" 2>&1 || true
+    if mysql_ok; then
+        log "MySQL voltou antes da recuperacao emergencial; nenhum processo encerrado."
+        return 0
+    fi
 
-    sleep 8
+    timeout -k 5 20 service "$rs" stop >> "$LOG" 2>&1 || true
+    timeout -k 5 30 service "$ms" stop >> "$LOG" 2>&1 || true
 
-    pkill -TERM mysqld 2>/dev/null || true
-    pkill -TERM mariadbd 2>/dev/null || true
-
-    sleep 10
+    if ! mysql_ok; then
+        log "MySQL ainda indisponivel; enviando SIGTERM para daemon e wrapper."
+        pkill -TERM -x mysqld_safe 2>/dev/null || true
+        pkill -TERM -x mysqld 2>/dev/null || true
+        pkill -TERM -x mariadbd 2>/dev/null || true
+        sleep 15
+    fi
 
     if pgrep -x mysqld >/dev/null 2>&1 ||
        pgrep -x mariadbd >/dev/null 2>&1; then
@@ -1780,10 +1796,18 @@ controlled_mysql_recovery() {
         )"
 
         log "Processo MySQL permaneceu preso: $mysql_processes"
-        log "MODO SEGURO: processo MySQL persistente; KILL -9 proibido. Intervencao manual necessaria."
-        return 1
-
-        sleep 4
+        if mysql_ok; then
+            log "MySQL respondeu durante a verificacao; SIGKILL cancelado."
+            return 0
+        fi
+        log "EMERGENCIA: SIGTERM nao encerrou o MySQL; aplicando SIGKILL somente no daemon MySQL."
+        pkill -KILL -x mysqld 2>/dev/null || true
+        pkill -KILL -x mariadbd 2>/dev/null || true
+        sleep 5
+        if pgrep -x mysqld >/dev/null 2>&1 || pgrep -x mariadbd >/dev/null 2>&1; then
+            log "CRITICO: daemon ainda presente apos SIGKILL; nao iniciar segunda instancia."
+            return 1
+        fi
     fi
 
     if ! pgrep -x mysqld >/dev/null 2>&1 &&
@@ -1800,7 +1824,7 @@ controlled_mysql_recovery() {
         chmod 755 /var/run/mysqld
     fi
 
-    service "$ms" start >> "$LOG" 2>&1 || true
+    timeout -k 5 120 service "$ms" start >> "$LOG" 2>&1 || true
 
     if ! wait_mysql "$MYSQL_START_TIMEOUT"; then
         log "CRÍTICO: MySQL não respondeu após recuperação controlada."
@@ -2075,7 +2099,7 @@ functional_queue_recovery() {
     ms="$(mysql_service)"
     rs="$(radius_service)"
 
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
         log "MODO SEGURO: fila funcional suspeita; reinicios automaticos bloqueados."
         return 1
     fi
@@ -2108,11 +2132,16 @@ $evidence_dir"
     sleep 3
 
     log "Reiniciando serviço $ms."
-    service "$ms" restart >> "$LOG" 2>&1 || true
+    timeout -k 5 120 service "$ms" restart >> "$LOG" 2>&1 || true
 
     if ! wait_mysql "$MYSQL_START_TIMEOUT"; then
         log "Restart simples do MySQL não recuperou. Aplicando recuperação controlada."
 
+        if [ "${GUARDIAN_ALLOW_MYSQL_EMERGENCY_KILL:-nao}" != "sim" ]; then
+            log "Recuperacao emergencial MySQL nao autorizada; restart simples ja tentado."
+            service "$rs" start >> "$LOG" 2>&1 || true
+            return 1
+        fi
         if ! controlled_mysql_recovery; then
             log "CRÍTICO: recuperação controlada também falhou."
             return 1
@@ -2232,7 +2261,7 @@ O Guardian v1.7 detectou fila RADIUS funcionalmente travada e tentou reiniciar M
 
         RADIUS_RECOVERY_ACTION="já estava saudável"
         if ! radius_ok; then
-            if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+            if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
                 log "MODO SEGURO: MySQL voltou, mas FreeRADIUS ainda nao esta saudavel; aguardando recuperacao autorizada."
                 exit 1
             fi
@@ -2390,7 +2419,8 @@ log "CRÍTICO: recuperação controlada falhou; novas tentativas suspensas por $
 exit 1
 GUARDIAN17
 
-cat > "$BACKUP_GUARDIAN" <<'GUARDIAN16'
+BACKUP_STAGE="$(mktemp "${BACKUP_GUARDIAN}.stage.XXXXXXXX")" || exit 1
+cat > "$BACKUP_STAGE" <<'GUARDIAN16'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -2654,11 +2684,13 @@ $FINAL_LOCKS"
 exit 1
 GUARDIAN16
 
-chown root:root "$MYSQL_GUARDIAN" "$BACKUP_GUARDIAN"
-chmod 700 "$MYSQL_GUARDIAN" "$BACKUP_GUARDIAN"
+chown root:root "$MYSQL_STAGE" "$BACKUP_STAGE"
+chmod 700 "$MYSQL_STAGE" "$BACKUP_STAGE"
 
-bash -n "$MYSQL_GUARDIAN" || { echo "ERRO: sintaxe Guardian v1.7."; exit 1; }
-bash -n "$BACKUP_GUARDIAN" || { echo "ERRO: sintaxe Guardian v1.6."; exit 1; }
+[ "$(wc -c < "$MYSQL_STAGE")" -gt 16000 ] && bash -n "$MYSQL_STAGE" || { echo "ERRO: MySQL Guardian incompleto."; exit 1; }
+[ "$(wc -c < "$BACKUP_STAGE")" -gt 6000 ] && bash -n "$BACKUP_STAGE" || { echo "ERRO: Backup Guardian incompleto."; exit 1; }
+mv -f "$MYSQL_STAGE" "$MYSQL_GUARDIAN" || exit 1
+mv -f "$BACKUP_STAGE" "$BACKUP_GUARDIAN" || exit 1
 
 cat > "$MYSQL_CRON" <<EOF
 SHELL=/bin/bash
