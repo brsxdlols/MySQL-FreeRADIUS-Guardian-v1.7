@@ -8,8 +8,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # CONFIGURAÇÃO
 # ==========================================================
 
-TELEGRAM_BOT="8219841344:AAE21B8_2SBV0druXkLgpzIQWdW_gRG6Z3k"
-TELEGRAM_CHAT_ID="-5546953464"
+TELEGRAM_BOT=""
+TELEGRAM_CHAT_ID=""
 MKAUTH_NAME="${MKAUTH_NAME:-}"
 USAR_TELEGRAM="sim"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-180}"
@@ -48,9 +48,8 @@ if [ -r "$CONFIG" ]; then
     OLD_MKAUTH_NAME="${MKAUTH_NAME:-}"
     [ -n "$OLD_MKAUTH_NAME" ] && DEFAULT_NAME="$OLD_MKAUTH_NAME"
 
-    TELEGRAM_BOT="8219841344:AAE21B8_2SBV0druXkLgpzIQWdW_gRG6Z3k"
-    TELEGRAM_CHAT_ID="-5546953464"
-    USAR_TELEGRAM="sim"
+    # Preserva credenciais e preferencia Telegram existentes no CONFIG.
+
 fi
 
 printf "Nome deste MK-AUTH/VM [%s]: " "$DEFAULT_NAME"
@@ -2338,7 +2337,7 @@ mysql_exec(){
     elif [ -r /root/.my.cnf ]; then
         timeout 15 mysql --defaults-file=/root/.my.cnf --connect-timeout=5 --batch --skip-column-names "$@" 2>/dev/null
     else
-        timeout 15 mysql -uroot -pvertrigo --connect-timeout=5 --batch --skip-column-names "$@" 2>/dev/null
+        return 1
     fi
 }
 mysql_ok(){ [ "$(mysql_exec -e "SELECT 1;" 2>/dev/null)" = "1" ]; }
@@ -2476,6 +2475,12 @@ ${MAX_TIME}s
 
 Backup Guardian v1.8-rc1 iniciou a recuperação."
 
+if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+    log "MODO SEGURO: metadata lock detectado; recuperacao destrutiva nao autorizada."
+    telegram_send "⚠️ MK-AUTH: metadata lock detectado; modo seguro ativo, intervencao manual necessaria."
+    exit 0
+fi
+
 RS="$(radius_service)"
 service "$RS" stop >> "$LOG" 2>&1 || true
 sleep 2
@@ -2583,8 +2588,6 @@ chown root:root "$MYSQL_CRON" "$BACKUP_CRON"
 chmod 644 "$MYSQL_CRON" "$BACKUP_CRON"
 
 rm -f \
-    /var/run/mkauth_mysql_radius_guardian.lock \
-    /var/run/mkauth_backup_guardian.lock \
     "$MYSQL_STATE/mysql_fail_start" \
     "$MYSQL_STATE/message_id" \
     "$MYSQL_STATE/incident_start"
