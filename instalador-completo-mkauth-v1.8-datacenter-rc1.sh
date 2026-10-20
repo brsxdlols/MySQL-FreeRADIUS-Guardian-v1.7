@@ -2384,11 +2384,11 @@ protect_sql(){
     for table in radacct radippool; do
         collation="$(mysql_exec -e "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA='mkradius' AND TABLE_NAME='$table';")"
         [ "$collation" = "latin1_swedish_ci" ] || continue
-        if grep -Eiq "^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\\`?$table\\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;" "$SQL_FILE"; then
+        if grep -Eiq "^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?$table\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;" "$SQL_FILE"; then
             stamp="$(date '+%Y%m%d-%H%M%S')"
             backup="/root/up_database.sql.bak-auto-v18-${table}-${stamp}-$$"
             if cp -a "$SQL_FILE" "$backup"; then
-                sed -i -E "/^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\\`?$table\\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;/ {
+                sed -i -E "/^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?$table\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;/ {
                     s|^|-- DESATIVADO GUARDIAN V1.8-rc1 ${stamp}: collation ja correta; evita metadata lock - |
                 }" "$SQL_FILE"
                 log "ALTER redundante $table desativado; backup $backup"
@@ -2590,24 +2590,20 @@ rm -f \
     "$MYSQL_STATE/incident_start"
 
 if [ -f "$SQL_FILE" ]; then
-    COLLATION="$(mysql_installer -e "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA='mkradius' AND TABLE_NAME='radacct';")"
-    echo "Collation atual da radacct: ${COLLATION:-não localizada}"
-    if [ "$COLLATION" = "latin1_swedish_ci" ]; then
-        if grep -Eq "^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?radacct\`?[[:space:]]+COLLATE[[:space:]]*=" "$SQL_FILE"; then
-            cp -a "$SQL_FILE" "/root/up_database.sql.bak-v1.6-${STAMP}"
-            sed -i -E "/^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?radacct\`?[[:space:]]+COLLATE[[:space:]]*=/ {
-                s|^|-- DESATIVADO PATCH V1.6 ${STAMP}: radacct já possui latin1_swedish_ci; evita metadata lock - |
+    for TABLE in radacct radippool; do
+        COLLATION="$(mysql_installer -e "SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA='mkradius' AND TABLE_NAME='$TABLE';")"
+        echo "Collation atual de $TABLE: ${COLLATION:-nao localizada}"
+        [ "$COLLATION" = "latin1_swedish_ci" ] || continue
+        if grep -Eiq "^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?$TABLE\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;" "$SQL_FILE"; then
+            cp -a "$SQL_FILE" "/root/up_database.sql.bak-v18-${TABLE}-${STAMP}-$$" || { echo "ERRO: backup SQL falhou"; exit 1; }
+            sed -i -E "/^[[:space:]]*ALTER[[:space:]]+TABLE[[:space:]]+\`?$TABLE\`?[[:space:]]+COLLATE[[:space:]]*=[[:space:]]*'latin1_swedish_ci'[[:space:]]*;/ {
+                s|^|-- DESATIVADO PATCH V1.8-rc1 ${STAMP}: collation ja correta; evita metadata lock - |
             }" "$SQL_FILE"
-            echo "ALTER TABLE radacct foi desativado com backup do SQL."
-        else
-            echo "ALTER TABLE radacct já estava comentado ou não existe."
+            echo "ALTER redundante de $TABLE desativado com backup."
         fi
-    else
-        echo "ATENÇÃO: radacct não está em latin1_swedish_ci."
-        echo "O patch NÃO alterou automaticamente o up_database.sql."
-    fi
+    done
 else
-    echo "ATENÇÃO: $SQL_FILE não encontrado."
+    echo "ATENCAO: $SQL_FILE nao encontrado."
 fi
 
 echo
