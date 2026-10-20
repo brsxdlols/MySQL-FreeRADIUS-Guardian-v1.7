@@ -195,6 +195,8 @@ done
     printf 'TELEGRAM_BOT=%q\n' "$TELEGRAM_BOT"
     printf 'TELEGRAM_CHAT_ID=%q\n' "$TELEGRAM_CHAT_ID"
     printf 'COOLDOWN_SECONDS=%q\n' "$COOLDOWN_SECONDS"
+    printf 'GUARDIAN_ALLOW_SERVICE_RESTART=%q\n' "sim"
+    printf 'GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY=%q\n' "nao"
 } > "$CONFIG"
 
 chown root:root "$CONFIG"
@@ -221,7 +223,8 @@ chmod 640 "$MONITOR_LOG" "$CRON_LOG"
 # SCRIPT DO MONITOR
 # ==========================================================
 
-cat > "$SCRIPT" <<'MONITOR'
+MONITOR_STAGE="$(mktemp "${SCRIPT}.stage.XXXXXXXX")" || exit 1
+cat > "$MONITOR_STAGE" <<'MONITOR'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -834,8 +837,8 @@ recover_mysql_radius() {
         return 0
     fi
 
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
-        log "MODO SEGURO: falha detectada, restart automatico MySQL/Radius bloqueado."
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
+        log "MODO SEGURO: reinicio automatico de servicos desabilitado."
         return 1
     fi
     log "======================================================"
@@ -1050,18 +1053,20 @@ fi
 exit 0
 MONITOR
 
-chown root:root "$SCRIPT"
-chmod 700 "$SCRIPT"
+chown root:root "$MONITOR_STAGE"
+chmod 700 "$MONITOR_STAGE"
 
 # ==========================================================
 # VALIDAR MONITOR
 # ==========================================================
 
-if ! bash -n "$SCRIPT"; then
+if ! test "$(wc -c < "$MONITOR_STAGE")" -gt 12000 || ! bash -n "$MONITOR_STAGE"; then
     echo
-    echo "ERRO: falha de sintaxe no monitor."
+    echo "ERRO: monitor incompleto ou sintaxe invalida."
+    rm -f "$MONITOR_STAGE"
     exit 1
 fi
+mv -f "$MONITOR_STAGE" "$SCRIPT" || exit 1
 
 # ==========================================================
 # CRON A CADA 30 SEGUNDOS
@@ -1370,7 +1375,8 @@ chown root:root \
 chmod 750 "$MYSQL_STATE" "$BACKUP_STATE"
 chmod 640 "$MYSQL_LOG" "$MYSQL_RUN_LOG" "$BACKUP_LOG" "$BACKUP_RUN_LOG"
 
-cat > "$MYSQL_GUARDIAN" <<'GUARDIAN17'
+MYSQL_STAGE="$(mktemp "${MYSQL_GUARDIAN}.stage.XXXXXXXX")" || exit 1
+cat > "$MYSQL_STAGE" <<'GUARDIAN17'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -1717,7 +1723,7 @@ cooldown_active() {
 }
 
 restart_radius() {
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
         log "MODO SEGURO: restart FreeRADIUS nao autorizado."
         return 1
     fi
@@ -2075,7 +2081,7 @@ functional_queue_recovery() {
     ms="$(mysql_service)"
     rs="$(radius_service)"
 
-    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+    if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
         log "MODO SEGURO: fila funcional suspeita; reinicios automaticos bloqueados."
         return 1
     fi
@@ -2232,7 +2238,7 @@ O Guardian v1.7 detectou fila RADIUS funcionalmente travada e tentou reiniciar M
 
         RADIUS_RECOVERY_ACTION="já estava saudável"
         if ! radius_ok; then
-            if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+            if [ "${GUARDIAN_ALLOW_SERVICE_RESTART:-sim}" != "sim" ]; then
                 log "MODO SEGURO: MySQL voltou, mas FreeRADIUS ainda nao esta saudavel; aguardando recuperacao autorizada."
                 exit 1
             fi
@@ -2390,7 +2396,8 @@ log "CRÍTICO: recuperação controlada falhou; novas tentativas suspensas por $
 exit 1
 GUARDIAN17
 
-cat > "$BACKUP_GUARDIAN" <<'GUARDIAN16'
+BACKUP_STAGE="$(mktemp "${BACKUP_GUARDIAN}.stage.XXXXXXXX")" || exit 1
+cat > "$BACKUP_STAGE" <<'GUARDIAN16'
 #!/bin/bash
 # GUARDIAN_FD_ISOLATION_V18
 service() {
@@ -2654,11 +2661,13 @@ $FINAL_LOCKS"
 exit 1
 GUARDIAN16
 
-chown root:root "$MYSQL_GUARDIAN" "$BACKUP_GUARDIAN"
-chmod 700 "$MYSQL_GUARDIAN" "$BACKUP_GUARDIAN"
+chown root:root "$MYSQL_STAGE" "$BACKUP_STAGE"
+chmod 700 "$MYSQL_STAGE" "$BACKUP_STAGE"
 
-bash -n "$MYSQL_GUARDIAN" || { echo "ERRO: sintaxe Guardian v1.7."; exit 1; }
-bash -n "$BACKUP_GUARDIAN" || { echo "ERRO: sintaxe Guardian v1.6."; exit 1; }
+[ "$(wc -c < "$MYSQL_STAGE")" -gt 16000 ] && bash -n "$MYSQL_STAGE" || { echo "ERRO: MySQL Guardian incompleto."; exit 1; }
+[ "$(wc -c < "$BACKUP_STAGE")" -gt 6000 ] && bash -n "$BACKUP_STAGE" || { echo "ERRO: Backup Guardian incompleto."; exit 1; }
+mv -f "$MYSQL_STAGE" "$MYSQL_GUARDIAN" || exit 1
+mv -f "$BACKUP_STAGE" "$BACKUP_GUARDIAN" || exit 1
 
 cat > "$MYSQL_CRON" <<EOF
 SHELL=/bin/bash
