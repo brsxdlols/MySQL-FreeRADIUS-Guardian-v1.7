@@ -2204,10 +2204,20 @@ O Guardian v1.7 detectou fila RADIUS funcionalmente travada e tentou reiniciar M
 
         log "MySQL voltou após ${DURATION}s."
 
-        restart_radius || {
-            log "CRÍTICO: FreeRADIUS não recuperou após retorno do MySQL."
-            exit 1
-        }
+        RADIUS_RECOVERY_ACTION="já estava saudável"
+        if ! radius_ok; then
+            if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+                log "MODO SEGURO: MySQL voltou, mas FreeRADIUS ainda nao esta saudavel; aguardando recuperacao autorizada."
+                exit 1
+            fi
+            if ! restart_radius || ! radius_ok; then
+                log "CRÍTICO: FreeRADIUS nao recuperou apos retorno do MySQL."
+                exit 1
+            fi
+            RADIUS_RECOVERY_ACTION="reiniciado e funcionando"
+        else
+            log "FreeRADIUS ja esta saudavel; restart desnecessario."
+        fi
 
         rm -f "$FAIL_START_FILE"
 
@@ -2223,7 +2233,7 @@ O Guardian v1.7 detectou fila RADIUS funcionalmente travada e tentou reiniciar M
         log "======================================================"
 
         finish_alert "🗄️ MySQL: ativo
-📡 FreeRADIUS: reiniciado e funcionando
+📡 FreeRADIUS: $RADIUS_RECOVERY_ACTION
 🔓 Porta UDP 1812: ativa" || true
 
     elif ! radius_ok; then
