@@ -1695,6 +1695,10 @@ cooldown_active() {
 }
 
 restart_radius() {
+    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+        log "MODO SEGURO: restart FreeRADIUS nao autorizado."
+        return 1
+    fi
     exec 8>/var/run/mkauth-guardian-global-recovery.lock
     if ! flock -n 8; then
         log "Recuperacao global em andamento; restart FreeRADIUS adiado."
@@ -1751,10 +1755,8 @@ controlled_mysql_recovery() {
         )"
 
         log "Processo MySQL permaneceu preso: $mysql_processes"
-        log "Aplicando KILL somente após espera controlada."
-
-        pkill -KILL mysqld 2>/dev/null || true
-        pkill -KILL mariadbd 2>/dev/null || true
+        log "MODO SEGURO: processo MySQL persistente; KILL -9 proibido. Intervencao manual necessaria."
+        return 1
 
         sleep 4
     fi
