@@ -380,7 +380,7 @@ mysql_query() {
 
     mysql \
         -uroot \
-        -pvertrigo \
+        --no-defaults \
         --connect-timeout=4 \
         --batch \
         --skip-column-names \
@@ -412,7 +412,7 @@ mysql_ok() {
                 else
                     mysql \
                         -uroot \
-                        -pvertrigo \
+                        --no-defaults \
                         --connect-timeout=4 \
                         --batch \
                         --skip-column-names \
@@ -1301,7 +1301,7 @@ mysql_installer() {
             --connect-timeout=5 --batch --skip-column-names "$@" 2>/dev/null
         return $?
     fi
-    timeout 15 mysql -uroot -pvertrigo \
+    timeout 15 mysql -uroot --no-defaults \
         --connect-timeout=5 --batch --skip-column-names "$@" 2>/dev/null
 }
 
@@ -1432,7 +1432,7 @@ mysql_exec() {
 
     timeout 12 mysql \
         -uroot \
-        -pvertrigo \
+        --no-defaults \
         --connect-timeout=4 \
         --batch \
         --skip-column-names \
@@ -2714,7 +2714,7 @@ echo -n "MySQL SELECT 1: "
 if [ -r /etc/mysql/debian.cnf ]; then
     mysql --defaults-file=/etc/mysql/debian.cnf -NBe "SELECT 1" 2>/dev/null || true
 else
-    mysql -uroot -pvertrigo -NBe "SELECT 1" 2>/dev/null || true
+    mysql -uroot --no-defaults -NBe "SELECT 1" 2>/dev/null || true
 fi
 service freeradius status 2>/dev/null || service radiusd status 2>/dev/null || true
 ss -lun 2>/dev/null | grep -E '(^|:)1812([[:space:]]|$)' || true
