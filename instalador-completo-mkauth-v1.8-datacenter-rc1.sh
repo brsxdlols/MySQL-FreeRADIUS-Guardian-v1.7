@@ -822,6 +822,12 @@ mark_recovery() {
 
 recover_mysql_radius() {
     local reason="$1"
+    # V1.8.1: o MySQL Guardian e o unico responsavel por MySQL indisponivel.
+    # Evita que o Watchdog segure o lock global durante a janela de 90s.
+    if ! mysql_ok; then
+        log "MySQL indisponivel; recuperacao delegada ao MySQL Guardian."
+        return 0
+    fi
     exec 8>/var/run/mkauth-guardian-global-recovery.lock
     if ! flock -n 8; then
         log "Outra recuperacao em andamento; watchdog nao reiniciara servicos."
@@ -1377,7 +1383,7 @@ set -u
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-GUARDIAN_VERSION="1.8-rc1"
+GUARDIAN_VERSION="1.8.1-rc1"
 
 CONFIG="/etc/default/check_backup_freeradius"
 LOG="/var/log/mkauth_mysql_radius_guardian.log"
@@ -1397,6 +1403,8 @@ QUEUE_FIRST_BAD_FILE="$STATE_DIR/queue_first_bad"
 WAIT_AUTO_RECOVERY="90"
 MYSQL_START_TIMEOUT="150"
 COOLDOWN_SECONDS="300"
+FAILED_RECOVERY_FILE="$STATE_DIR/last_failed_mysql_recovery"
+FAILED_RECOVERY_COOLDOWN="300"
 
 # Fila funcionalmente travada:
 # 10+ erros novos em uma amostra e 2 amostras consecutivas.
@@ -1730,10 +1738,13 @@ restart_radius() {
 }
 
 controlled_mysql_recovery() {
-    exec 8>/var/run/mkauth-guardian-global-recovery.lock
-    if ! flock -n 8; then
-        log "Recuperacao global em andamento; nao reiniciara MySQL."
-        return 1
+    # A recuperacao de fila ja possui o lock global; nao reabrir FD 8.
+    if [ "${GUARDIAN_GLOBAL_LOCK_HELD:-nao}" != "sim" ]; then
+        exec 8>/var/run/mkauth-guardian-global-recovery.lock
+        if ! flock -n 8; then
+            log "Recuperacao global em andamento; MySQL Guardian aguardara."
+            return 2
+        fi
     fi
     if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
         log "MODO SEGURO: recuperacao com parada forcada do MySQL desabilitada."
@@ -2056,6 +2067,7 @@ functional_queue_recovery() {
         log "Outra recuperacao em andamento; MySQL Guardian nao reiniciara servicos."
         return 0
     fi
+    local GUARDIAN_GLOBAL_LOCK_HELD="sim"
     local ms=""
     local rs=""
     local evidence_dir=""
@@ -2328,8 +2340,23 @@ fi
 log "MySQL indisponível há ${FAIL_DURATION}s."
 log "Janela de recuperação automática encerrada."
 
+# Evita repetir parada/TERM em processo persistente a cada 30 segundos.
+if [ -r "$FAILED_RECOVERY_FILE" ]; then
+    read -r FAILED_AT < "$FAILED_RECOVERY_FILE"
+    case "$FAILED_AT" in
+        ''|*[!0-9]*) FAILED_AT=0 ;;
+    esac
+    if [ "$FAILED_AT" -gt 0 ] &&
+       [ "$((NOW - FAILED_AT))" -ge 0 ] &&
+       [ "$((NOW - FAILED_AT))" -lt "$FAILED_RECOVERY_COOLDOWN" ]; then
+        log "Tentativa anterior falhou; aguardando cooldown de ${FAILED_RECOVERY_COOLDOWN}s."
+        exit 0
+    fi
+fi
+
 if controlled_mysql_recovery; then
 
+    rm -f "$FAILED_RECOVERY_FILE"
     rm -f "$FAIL_START_FILE"
 
     date +%s > "$LAST_RECOVERY_FILE"
@@ -2349,9 +2376,17 @@ if controlled_mysql_recovery; then
 🔓 Porta UDP 1812: ativa" || true
 
     exit 0
+else
+    RECOVERY_RC=$?
+    if [ "$RECOVERY_RC" -eq 2 ]; then
+        log "Recuperacao adiada: lock global ocupado; proximo cron tentara novamente."
+        exit 0
+    fi
 fi
 
-log "CRÍTICO: recuperação controlada falhou."
+date +%s > "$FAILED_RECOVERY_FILE"
+chmod 600 "$FAILED_RECOVERY_FILE"
+log "CRÍTICO: recuperação controlada falhou; novas tentativas suspensas por ${FAILED_RECOVERY_COOLDOWN}s."
 exit 1
 GUARDIAN17
 
@@ -2366,7 +2401,7 @@ systemctl() {
 }
 set -u
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-GUARDIAN_VERSION="1.8-rc1"
+GUARDIAN_VERSION="1.8.1-rc1"
 CONFIG="/etc/default/check_backup_freeradius"
 LOG="/var/log/mkauth_backup_guardian.log"
 STATE_DIR="/var/lib/mkauth_backup_guardian"
