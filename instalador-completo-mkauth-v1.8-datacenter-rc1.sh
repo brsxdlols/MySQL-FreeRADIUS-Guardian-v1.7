@@ -223,6 +223,13 @@ chmod 640 "$MONITOR_LOG" "$CRON_LOG"
 
 cat > "$SCRIPT" <<'MONITOR'
 #!/bin/bash
+# GUARDIAN_FD_ISOLATION_V18
+service() {
+    command service "$@" 8>&- 9>&-
+}
+systemctl() {
+    command systemctl "$@" 8>&- 9>&-
+}
 
 set -u
 
@@ -1359,6 +1366,13 @@ chmod 640 "$MYSQL_LOG" "$MYSQL_RUN_LOG" "$BACKUP_LOG" "$BACKUP_RUN_LOG"
 
 cat > "$MYSQL_GUARDIAN" <<'GUARDIAN17'
 #!/bin/bash
+# GUARDIAN_FD_ISOLATION_V18
+service() {
+    command service "$@" 8>&- 9>&-
+}
+systemctl() {
+    command systemctl "$@" 8>&- 9>&-
+}
 set -u
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -1368,7 +1382,7 @@ GUARDIAN_VERSION="1.8-rc1"
 CONFIG="/etc/default/check_backup_freeradius"
 LOG="/var/log/mkauth_mysql_radius_guardian.log"
 STATE_DIR="/var/lib/mkauth_mysql_radius_guardian"
-LOCK_FILE="/var/run/mkauth_mysql_radius_guardian.lock"
+LOCK_FILE="/var/run/mkauth_mysql_radius_guardian_v18.lock"
 
 FAIL_START_FILE="$STATE_DIR/mysql_fail_start"
 LAST_RECOVERY_FILE="$STATE_DIR/last_recovery"
@@ -2343,6 +2357,13 @@ GUARDIAN17
 
 cat > "$BACKUP_GUARDIAN" <<'GUARDIAN16'
 #!/bin/bash
+# GUARDIAN_FD_ISOLATION_V18
+service() {
+    command service "$@" 8>&- 9>&-
+}
+systemctl() {
+    command systemctl "$@" 8>&- 9>&-
+}
 set -u
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 GUARDIAN_VERSION="1.8-rc1"
