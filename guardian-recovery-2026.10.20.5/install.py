@@ -18,7 +18,7 @@ from installer_settings import parse_settings,validate
 HERE=Path(__file__).resolve().parent
 DEST='/usr/local/lib/mkauth-guardian-recovery'
 OLD=['/var/check_backup_freeradius.sh','/usr/local/sbin/mkauth_mysql_radius_guardian.sh','/usr/local/sbin/mkauth_backup_guardian.sh']
-SHIM=('#!/bin/sh\n# Guardian Recovery 2026.10.20.4 — single coordinator\nexec /usr/bin/python3 '+DEST+'/guardian_controller.py\n').encode()
+SHIM=('#!/bin/sh\n# Guardian Recovery 2026.10.20.5 — single coordinator\nexec /usr/bin/python3 '+DEST+'/guardian_controller.py\n').encode()
 LOCKS=['/var/run/mkauth-guardian-recovery-install.lock','/var/run/mkauth-guardian-global-recovery.lock','/var/run/check_backup_freeradius.lock','/var/run/mkauth_mysql_radius_guardian.lock','/var/run/mkauth_mysql_radius_guardian_v18.lock','/var/run/mkauth_backup_guardian.lock','/var/run/mkauth-limpeza.lock','/var/run/mkauth-native-backup-supervisor.lock']
 
 def review_sources(paths,supported,shim_hash):

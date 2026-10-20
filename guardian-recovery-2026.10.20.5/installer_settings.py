@@ -1,9 +1,11 @@
 """Private local setup; never execute a downloaded installer or print credentials."""
 import getpass
 import hashlib
+import json
 import re
 import shlex
 import urllib.request
+import urllib.parse
 
 LEGACY_URL='https://raw.githubusercontent.com/brsxdlols/MySQL-FreeRADIUS-Guardian-v1.7/6edbb0e779ee2f5f7bd20999faf3a4958e3d5d51/instalador-completo-mkauth-v1.7.1-datacenter.sh'
 LEGACY_SHA256='df93dce993122ab15043ba78e3f9ce1dec07cbf7ba5e136e10aa862b89df0c2e'
@@ -58,10 +60,38 @@ def render_settings(original,values):
     if text and not text.endswith('\n'):text+='\n'
     return text+''.join(key+'='+shlex.quote(values.get(key,''))+'\n' for key in KEYS)
 
-def choose_settings(original,provider,interactive=True,read=None,secret=None,loader=None):
+def lookup_chat(token,chat):
+    """Read Telegram getChat metadata only; never log URLs or API error bodies."""
+    try:
+        body=urllib.parse.urlencode({'chat_id':chat}).encode()
+        with urllib.request.urlopen('https://api.telegram.org/bot'+token+'/getChat',data=body,timeout=8) as response:data=response.read(65537)
+        if len(data)>65536:return {'status':'unavailable'}
+        reply=json.loads(data)
+        if reply.get('ok') is not True or not isinstance(reply.get('result'),dict):return {'status':'unavailable'}
+        info=reply['result'];kind=info.get('type')
+        if kind not in ('group','supergroup','channel','private'):return {'status':'unavailable'}
+        title=info.get('title')
+        if kind=='private':title=' '.join(str(info.get(k) or '') for k in ('first_name','last_name')).strip() or info.get('username')
+        if not isinstance(title,str):return {'status':'unavailable'}
+        title=re.sub(r'[\x00-\x1f\x7f]',' ',title).strip()[:200]
+        if not title:return {'status':'unavailable'}
+        return {'status':'ok','title':title,'type':kind}
+    except Exception:return {'status':'unavailable'}
+
+def show_chat(values,resolver):
+    print('Consultando nome do destino no Telegram...',flush=True)
+    info=resolver(values['TELEGRAM_BOT'],values['TELEGRAM_CHAT_ID'])
+    if info.get('status')=='ok':
+        label='Conversa encontrada' if info.get('type')=='private' else 'Canal encontrado' if info.get('type')=='channel' else 'Grupo encontrado'
+        print(label+': '+info['title'],flush=True)
+    else:print('Nome do grupo: nao confirmado; confira acesso do bot e conectividade.',flush=True)
+    print('Chat ID: '+values['TELEGRAM_CHAT_ID'],flush=True)
+
+def choose_settings(original,provider,interactive=True,read=None,secret=None,loader=None,resolver=None):
     read=input if read is None else read
     secret=getpass.getpass if secret is None else secret
     loader=fetch_defaults if loader is None else loader
+    resolver=lookup_chat if resolver is None else resolver
     values=parse_settings(original);values.setdefault('MKAUTH_NAME',provider);values.setdefault('USAR_TELEGRAM','sim')
     if not values['MKAUTH_NAME']:values['MKAUTH_NAME']=provider
     if interactive:
@@ -81,7 +111,7 @@ def choose_settings(original,provider,interactive=True,read=None,secret=None,loa
         for key in missing:values[key]=defaults[key]
     validate(values)
     if interactive:
-        print('Chat/grupo encontrado: '+values['TELEGRAM_CHAT_ID'],flush=True)
+        show_chat(values,resolver)
         print('Token encontrado: ********'+values['TELEGRAM_BOT'][-4:],flush=True)
         answer=read('Manter o token e o chat desse grupo? [S/n]: ').strip().lower()
         if answer in ('n','nao','não'):
@@ -89,6 +119,8 @@ def choose_settings(original,provider,interactive=True,read=None,secret=None,loa
             chat=read('Novo Chat ID ['+values['TELEGRAM_CHAT_ID']+']: ').strip()
             if token:values['TELEGRAM_BOT']=token
             if chat:values['TELEGRAM_CHAT_ID']=chat
+            validate(values)
+            show_chat(values,resolver)
         elif answer not in ('','s','sim','y','yes'):raise RuntimeError('Resposta invalida; nenhuma configuracao aplicada')
     validate(values)
     return values

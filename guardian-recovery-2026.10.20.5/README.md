@@ -1,6 +1,6 @@
-# Guardian Recovery 2026.10.20.3 — candidato de implantação
+# Guardian Recovery 2026.10.20.5 — candidato de implantação
 
-Atualização para instalações existentes do Guardian MK-AUTH. Não é um instalador universal do MK-AUTH. Testado com MariaDB 10.3.27, TokuDB e FreeRADIUS 3.0.17 no ambiente auditado e em instâncias isoladas no mesmo servidor.
+Instalacao e atualizacao do Guardian em MK-AUTH com estrutura padrao. Nao instala o proprio MK-AUTH ou MariaDB. Testado com MariaDB 10.3.27, TokuDB e FreeRADIUS 3.0.17 no ambiente auditado e em instancias isoladas.
 
 ## O que muda
 
@@ -13,24 +13,40 @@ Atualização para instalações existentes do Guardian MK-AUTH. Não é um inst
 
 ## Instalação
 
-Requisitos: root, Linux x86_64, Python 3.7+, ferramentas MariaDB, flock, service, ss, estrutura padrão `/var/lib/mysql`, configuração local existente do Guardian, três scripts com hashes revisados e ao menos um `.maz` nativo estruturalmente válido. Outros layouts ou scripts modificados são recusados; não remova essas verificações para forçar a instalação.
+Requisitos: root, Linux x86_64, Python 3.7+, ferramentas MariaDB, flock, service, ss, credenciais locais de MariaDB, datadir `/var/lib/mysql`, scripts e cron de backup nativo e ao menos um `.maz` nativo estruturalmente valido. Instalacao nova do Guardian aceita os tres scripts ausentes. Atualizacao exige os tres presentes e com hashes revisados. Instalacao parcial, scripts desconhecidos ou outros layouts sao recusados antes de alterar os arquivos.
 
-O instalador agora identifica o provedor no banco e preserva o nome local do MK-AUTH/VM e as credenciais. Sem argumentos, aplica a atualizacao e habilita a recuperacao normal. Nao e preciso preencher o nome do provedor.
+A interface interativa pergunta:
+
+```text
+Nome deste MK-AUTH/VM [NOME ENCONTRADO]:
+Grupo encontrado: NOME OBTIDO DO TELEGRAM
+Chat ID: ID DO CHAT
+Token encontrado: ******** (somente os quatro caracteres finais)
+Manter o token e o chat desse grupo? [S/n]:
+```
+
+Enter mantem o nome. Digitar outro nome altera somente o nome local da VM, sem alterar o cadastro do provedor no banco. Enter ou S mantem Telegram. N permite informar um token com digitacao oculta e outro chat; Enter em cada campo mantem seu valor atual. O token completo nunca e exibido. Telegram anteriormente desabilitado permanece assim por padrao e pode ser ativado por escolha explicita.
+
+Quando nome, token e chat existem, sao reaproveitados da configuracao local. Na primeira instalacao ou quando faltam credenciais, os padroes do datacenter sao lidos em memoria de uma revisao fixa do instalador v1.7.1 ja publicada pelo proprietario, apos verificar SHA-256. Esse script antigo nunca e executado. Os valores foram comparados em memoria com os configurados no ambiente de referencia e coincidem. Nenhum token ou chat real esta embutido no pacote novo.
+
+Se a fonte estiver indisponivel na instalacao interativa, e possivel informar os valores localmente. O arquivo final fica em `/etc/default/check_backup_freeradius`, modo 600; dados temporarios privados sao removidos ao sair. Antes da gravacao, o instalador verifica se a configuracao mudou durante as perguntas e recusa sobrescrever alteracao concorrente.
 
 ```sh
 bash -n /root/instalador-guardian-recovery.sh
 bash /root/instalador-guardian-recovery.sh
 ```
 
-Para somente simular, sem alterar arquivos nem enviar confirmacao ao Telegram:
+Somente simular, sem perguntas, sem alterar configuracao ou enviar Telegram:
 
 ```sh
 bash /root/instalador-guardian-recovery.sh --dry-run
 ```
 
-Ao concluir, exibe arquivos atualizados, caminho do rollback, politica de recuperacao, saude dos servicos e resultado real do Telegram. Quando nada mudou, informa que a configuracao ja estava atualizada. Falhas ou recusas nao enviam confirmacao de sucesso. Telegram desabilitado, credencial invalida ou falha de conexao sao informados sem imprimir tokens. A confirmacao depende da configuracao local existente; nao ha token ou grupo embutido.
+Execucao sem terminal: use `--non-interactive` para manter valores locais ou utilizar padroes verificados quando ausentes. Isso nao ativa o ultimo recurso SIGKILL em servidores novos; essa autorizacao continua sendo uma opcao separada.
 
-A instalacao nao reinicia MariaDB, FreeRADIUS, Docker ou cron. O monitor habilitado podera recuperar os servicos depois de uma falha confirmada. Use um servidor por vez antes de expandir. O script interno `install.py` mantem a exigencia de `--expected-provider` e a simulacao por padrao; a interface resolve a identidade e passa essa verificacao explicitamente.
+Ao concluir, exibe arquivos atualizados, rollback, politica de recuperacao, saude dos servicos e resultado real do Telegram. Falha ou recusa nao envia confirmacao de sucesso. Sem credenciais validas ou conectividade, a entrega pode falhar e isso e informado no terminal. Nao reinicia MariaDB, FreeRADIUS, Docker ou cron durante a instalacao.
+
+Os padroes sao uma referencia fixa da publicacao antiga, nao uma consulta remota continua ao servidor de referencia. Tokens ja publicados devem ser substituidos; apos rotacao, escolha N para informar os novos dados privados. O pacote novo nao publica tokens adicionais nem contem credenciais SSH.
 
 
 ## Último recurso com SIGKILL: adesão explícita
@@ -64,3 +80,5 @@ python3 /root/DIRETORIO_EXTRAIDO/rollback.py /root/mkauth-normal-recovery-backup
 Acrescente `--apply` após revisar. O rollback recusa arquivos alterados depois da instalação e recuperação ativa. Ele restaura configurações e crons anteriores, inclusive seus comportamentos antigos; não reverte automaticamente comentários do protector nem a quarentena. As cópias do SQL anterior ficam em `/root/mkauth-guardian-safety-backups`; a reversão deve comparar versões para não sobrescrever atualizações posteriores do fornecedor.
 
 Tokens que já tenham sido publicados por versões antigas precisam ser revogados e substituídos pelo administrador; não estão incorporados nesta atualização.
+
+O nome do destino e consultado pelo metodo getChat da API oficial do Telegram, antes da confirmacao. Grupos, canais e conversas pessoais sao identificados separadamente. Falha de rede, token invalido ou falta de acesso deixam o nome como nao confirmado; o instalador nao inventa um titulo. Se o operador alterar token/chat, consulta novamente o destino selecionado. A consulta nao envia mensagem ao grupo e nao ocorre na simulacao ou modo sem perguntas.

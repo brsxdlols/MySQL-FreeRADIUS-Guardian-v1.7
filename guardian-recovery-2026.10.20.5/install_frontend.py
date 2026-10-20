@@ -12,7 +12,7 @@ import os
 from guardian_safety import mysql_read
 from installer_settings import choose_settings,render_settings
 
-VERSION='2026.10.20.4'
+VERSION='2026.10.20.5'
 
 @contextlib.contextmanager
 def prepared_config(provider,args):
