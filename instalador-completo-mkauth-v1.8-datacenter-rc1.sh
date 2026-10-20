@@ -1691,6 +1691,11 @@ cooldown_active() {
 }
 
 restart_radius() {
+    exec 8>/var/run/mkauth-guardian-global-recovery.lock
+    if ! flock -n 8; then
+        log "Recuperacao global em andamento; restart FreeRADIUS adiado."
+        return 0
+    fi
     local s=""
 
     s="$(radius_service)"
@@ -1703,6 +1708,15 @@ restart_radius() {
 }
 
 controlled_mysql_recovery() {
+    exec 8>/var/run/mkauth-guardian-global-recovery.lock
+    if ! flock -n 8; then
+        log "Recuperacao global em andamento; nao reiniciara MySQL."
+        return 1
+    fi
+    if [ "${GUARDIAN_ALLOW_DESTRUCTIVE_RECOVERY:-nao}" != "sim" ]; then
+        log "MODO SEGURO: recuperacao com parada forcada do MySQL desabilitada."
+        return 1
+    fi
     local ms=""
     local rs=""
     local mysql_processes=""
@@ -2613,8 +2627,8 @@ echo
 echo "Executando validações seguras..."
 timeout 120 "$MYSQL_GUARDIAN"; RC17=$?
 timeout 120 "$BACKUP_GUARDIAN"; RC16=$?
-echo "Retorno MySQL Guardian v1.7: $RC17"
-echo "Retorno Backup Guardian v1.6: $RC16"
+echo "Retorno MySQL Guardian v1.8-rc1: $RC17"
+echo "Retorno Backup Guardian v1.8-rc1: $RC16"
 
 restart_cron
 CRON_WAS_STOPPED=0
@@ -2624,7 +2638,7 @@ sleep 2
 
 echo
 echo "======================================================"
-echo " INSTALADOR COMPLETO V1.7.1 INSTALADO"
+echo " INSTALADOR COMPLETO V1.8-rc1 INSTALADO"
 echo "======================================================"
 echo "Monitor principal preservado: $WATCHDOG"
 echo "MySQL Guardian: $MYSQL_GUARDIAN"
