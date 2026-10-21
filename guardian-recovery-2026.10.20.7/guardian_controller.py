@@ -17,6 +17,7 @@ from recovery_core import begin, step
 from exact_signal import send as send_exact
 from radius_signals import count_unfinished
 from incident_capture import capture_queue
+from notification_messages import render as render_notification
 
 ROOT=Path('/var/lib/mkauth-guardian-recovery')
 CONFIG=Path('/etc/default/mkauth-guardian-normal-recovery.json')
@@ -63,7 +64,8 @@ def notify(message):
         token=values.get('TELEGRAM_BOT','');chat=values.get('TELEGRAM_CHAT_ID','')
         if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]+',token) or not chat:return False
         name=values.get('MKAUTH_NAME','MK-AUTH')
-        body=urllib.parse.urlencode({'chat_id':chat,'text':name+' — '+message}).encode()
+        text=render_notification(message,name) if isinstance(message,dict) else name+' \u2014 '+message
+        body=urllib.parse.urlencode({'chat_id':chat,'text':text}).encode()
         with urllib.request.urlopen('https://api.telegram.org/bot'+token+'/sendMessage',data=body,timeout=8) as response:
             reply=json.loads(response.read(65536))
             log('telegram_delivery',ok=bool(reply.get('ok')))
@@ -113,7 +115,7 @@ class Production:
             raise RuntimeError('Exact MariaDB escalation disabled')
         evidence=send_exact(record,kind,incident,'/var/lib/mysql','/root/mkauth-normal-recovery-incidents')
         log('database_exact_signal',**evidence)
-        notify('MariaDB nao encerrou no prazo. Sinal '+kind+' enviado somente ao processo confirmado; evidencias privadas registradas.')
+        notify({'event':'escalation','record':incident,'signal':kind,'pid':record['pid']})
     def start(self,kind):
         service='mysql' if kind=='database' else 'freeradius'
         log('service_start_requested',service=service)
@@ -167,10 +169,10 @@ def main():
                 state['history']=(state.get('history',[])+[{'at':time.time(),'database':active['database'],'reason':active['reason']}])[-20:]
                 state.update(bad_database=0,bad_radius=0,bad_queue=0,last_recovery=time.time())
                 log('recovery_available',reason=active['reason'],availability_only=True)
-                notify('Servicos disponiveis apos recuperacao coordenada. SIGKILL utilizado: '+str(bool(active.get('used_sigkill')))+'. Accounting ainda requer validacao funcional.')
+                notify({'event':'recovery_done','record':active,'health':{'database':True,'radius':True}})
             elif active['phase']=='manual':
                 log('recovery_stopped',error=active.get('error'))
-                notify('Recuperacao interrompida: '+active.get('error','ver logs')+'. Verificar evidencias antes de nova tentativa.')
+                notify({'event':'recovery_manual','record':active})
             save(state);return 0
         if now-state.get('last_sample',0)<20 and not args.recover_now:return 0
         db=backend.database_ready();radius=backend.radius_ready();queue=queue_sample(state)
@@ -187,7 +189,7 @@ def main():
             log('queue_errors_detected',count=queue,consecutive=state['bad_queue'],critical_lock=blocked)
         if queue and now-state.get('last_queue_evidence',0)>=300:
             try:
-                evidence=capture_queue(state['last_health']);state['last_queue_evidence']=now
+                evidence=capture_queue(state['last_health']);state['last_queue_evidence']=now;state['last_queue_evidence_path']=evidence
                 log('queue_evidence_saved',path=evidence)
             except Exception as error:log('queue_evidence_failed',error=type(error).__name__)
         request=ROOT/'request.json'
@@ -205,8 +207,10 @@ def main():
                 log('recovery_rate_limited');save(state);return 0
             reason=args.reason if args.recover_now else ('database_unavailable' if not db else 'persistent_queue_or_lock' if queue else 'radius_unavailable')
             state['recovery']=begin(reason,need_database,allow_sigkill=config.get('allow_sigkill_exact_mariadb',False))
+            state['recovery']['initial_health']=dict(state['last_health'])
+            state['recovery']['evidence_path']=state.get('last_queue_evidence_path') if queue and now-state.get('last_queue_evidence',0)<600 else None
             log('normal_recovery_begin',reason=reason,database=need_database)
-            notify('Falha confirmada: '+reason+'. Recuperacao coordenada iniciada. Escalada exata autorizada: '+str(bool(config.get('allow_sigkill_exact_mariadb')))+'.')
+            notify({'event':'recovery_begin','record':state['recovery']})
         save(state);return 0
 
 if __name__=='__main__':
