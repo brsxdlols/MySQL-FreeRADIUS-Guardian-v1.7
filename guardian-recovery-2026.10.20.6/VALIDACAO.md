@@ -42,3 +42,11 @@ A versao 2026.10.20.4 passou em bash -n e nos 41 testes em Linux/Python 3.7. Em 
 Sete testes adicionais cobrem consulta getChat com titulo de grupo, recusa da API sem titulo inventado, erro de rede sem exposicao do token/URL, conversa pessoal distinta de grupo, limpeza de caracteres de controle, exibicao do titulo e aviso explicito quando a consulta falha. Esses testes nao alteram as limitacoes de backup e recuperacao ja documentadas.
 
 A versao 2026.10.20.5 executou os 48 testes em Linux/Python 3.7 e concluiu a instalacao pelo terminal SSH real. A API getChat retornou o titulo do grupo configurado, que foi exibido antes da pergunta de preservacao. Os valores foram mantidos com Enter e a API de envio confirmou a mensagem final. Os servicos permaneceram disponiveis. O titulo e as credenciais reais nao foram incluidos nos testes ou no pacote publico.
+
+## Incidente de accounting e detector 2026.10.20.6
+
+Foi comprovado um falso negativo: mensagens reais em formato `component accounting module sql` estavam presentes enquanto o monitor contava zero, pois exigia angulos ao redor do modulo. O trecho privado capturado continha 37 avisos no formato simples, nenhum no formato reconhecido pelo filtro anterior. O cron e os servicos estavam ativos. Na primeira consulta os comandos SQL ja nao estavam bloqueados, portanto a causa inicial do bloqueio nao foi capturada nem atribuida ao backup.
+
+Oito testes adicionais cobrem sql simples, queue com angulos, sqlippool, preacct, maiusculas/CRLF, repeticoes e recusa de mensagens/modulos diferentes. A nova captura privada e limitada permite observar os processos SQL antes da recuperacao em futuras ocorrencias. Nao se afirma que estes testes reproduzem todos os travamentos do ambiente.
+
+A versao 2026.10.20.6 passou nos 56 testes e foi aplicada sem reiniciar os servicos. O arquivo real do incidente foi reprocessado privadamente: filtro anterior zero, filtro corrigido 37. Uma amostra somente de leitura de 30 sessoes ativas apresentou 20 alteracoes em 109 segundos, com atualizacao mais recente de dois segundos na segunda amostra. O accounting estava progredindo; isso nao certifica todas as sessoes nem comprova a causa inicial do atraso. Um novo lote curto foi registrado pelo monitor corrigido com quatro avisos, abaixo do limiar de recuperacao persistente.

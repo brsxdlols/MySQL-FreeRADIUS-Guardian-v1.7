@@ -18,7 +18,7 @@ from installer_settings import parse_settings,validate
 HERE=Path(__file__).resolve().parent
 DEST='/usr/local/lib/mkauth-guardian-recovery'
 OLD=['/var/check_backup_freeradius.sh','/usr/local/sbin/mkauth_mysql_radius_guardian.sh','/usr/local/sbin/mkauth_backup_guardian.sh']
-SHIM=('#!/bin/sh\n# Guardian Recovery 2026.10.20.5 — single coordinator\nexec /usr/bin/python3 '+DEST+'/guardian_controller.py\n').encode()
+SHIM=('#!/bin/sh\n# Guardian Recovery 2026.10.20.6 — single coordinator\nexec /usr/bin/python3 '+DEST+'/guardian_controller.py\n').encode()
 LOCKS=['/var/run/mkauth-guardian-recovery-install.lock','/var/run/mkauth-guardian-global-recovery.lock','/var/run/check_backup_freeradius.lock','/var/run/mkauth_mysql_radius_guardian.lock','/var/run/mkauth_mysql_radius_guardian_v18.lock','/var/run/mkauth_backup_guardian.lock','/var/run/mkauth-limpeza.lock','/var/run/mkauth-native-backup-supervisor.lock']
 
 def review_sources(paths,supported,shim_hash):
@@ -74,7 +74,7 @@ def main():
             actual=hashlib.sha256(cnf.read_bytes()).hexdigest() if cnf.exists() else None
             if actual!=candidate['base_sha256']:raise RuntimeError('Local configuration changed during setup; refusing overwrite')
         plan={}
-        for name in ['guardian_safety.py','recovery_core.py','guardian_controller.py','exact_signal.py','backup_supervisor.py','compatible_backup.py','install.py','installer_settings.py','supported-source-hashes.json']:
+        for name in ['guardian_safety.py','recovery_core.py','radius_signals.py','incident_capture.py','exact_signal.py','guardian_controller.py','backup_supervisor.py','compatible_backup.py','install.py','installer_settings.py','supported-source-hashes.json']:
             file=HERE/name;plan[DEST+'/'+file.name]=(file.read_bytes(),0o600)
         template=Path('/var/lib/mkauth-guardian-recovery/native-template.json')
         blueprint=json.loads(template.read_text()) if template.exists() else discover_template()

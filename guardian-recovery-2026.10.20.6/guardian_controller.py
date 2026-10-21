@@ -15,6 +15,8 @@ import urllib.request
 from guardian_safety import ALTER, atomic_bytes, mysql_read, protector
 from recovery_core import begin, step
 from exact_signal import send as send_exact
+from radius_signals import count_unfinished
+from incident_capture import capture_queue
 
 ROOT=Path('/var/lib/mkauth-guardian-recovery')
 CONFIG=Path('/etc/default/mkauth-guardian-normal-recovery.json')
@@ -137,7 +139,7 @@ def queue_sample(state):
         with path.open('rb') as stream:
             stream.seek(max(offset,info.st_size-1048576));data=stream.read(1048576)
         state.update(radius_inode=info.st_ino,radius_offset=info.st_size)
-        return len(re.findall(rb'unfinished request in component.*module <(?:queue|sql|sqlippool)>',data,re.I))
+        return count_unfinished(data)
     except OSError:return 0
 
 def main():
@@ -181,6 +183,13 @@ def main():
         state['bad_radius']=state.get('bad_radius',0)+1 if not radius else 0
         state['bad_queue']=state.get('bad_queue',0)+1 if queue>=10 else 0
         state.update(last_sample=now,last_health={'database':db,'radius':radius,'queue_errors':queue,'critical_lock':blocked})
+        if queue:
+            log('queue_errors_detected',count=queue,consecutive=state['bad_queue'],critical_lock=blocked)
+        if queue and now-state.get('last_queue_evidence',0)>=300:
+            try:
+                evidence=capture_queue(state['last_health']);state['last_queue_evidence']=now
+                log('queue_evidence_saved',path=evidence)
+            except Exception as error:log('queue_evidence_failed',error=type(error).__name__)
         request=ROOT/'request.json'
         if request.exists():
             requested=json.loads(request.read_text());request.unlink()

@@ -1,4 +1,4 @@
-# Guardian Recovery 2026.10.20.5 — candidato de implantação
+# Guardian Recovery 2026.10.20.6 — candidato de implantação
 
 Instalacao e atualizacao do Guardian em MK-AUTH com estrutura padrao. Nao instala o proprio MK-AUTH ou MariaDB. Testado com MariaDB 10.3.27, TokuDB e FreeRADIUS 3.0.17 no ambiente auditado e em instancias isoladas.
 
@@ -82,3 +82,9 @@ Acrescente `--apply` após revisar. O rollback recusa arquivos alterados depois 
 Tokens que já tenham sido publicados por versões antigas precisam ser revogados e substituídos pelo administrador; não estão incorporados nesta atualização.
 
 O nome do destino e consultado pelo metodo getChat da API oficial do Telegram, antes da confirmacao. Grupos, canais e conversas pessoais sao identificados separadamente. Falha de rede, token invalido ou falta de acesso deixam o nome como nao confirmado; o instalador nao inventa um titulo. Se o operador alterar token/chat, consulta novamente o destino selecionado. A consulta nao envia mensagem ao grupo e nao ocorre na simulacao ou modo sem perguntas.
+
+## Correcao do detector de accounting
+
+O detector anterior reconhecia somente `module <sql>` e perdia os avisos reais `module sql`. A versao 2026.10.20.6 reconhece os dois formatos para sql, sqlippool, queue e preacct. Nao altera os limites de confirmacao ou a politica de sinais. Sintomas persistentes podem acionar recuperacao; a correcao do filtro nao prova a causa do bloqueio SQL.
+
+Na primeira amostra com avisos, salva evidencia privada, no maximo uma vez a cada cinco minutos, em `/root/mkauth-guardian-queue-incidents`, com permissoes 700/600. A captura limitada contem log, memoria e processos SQL e pode incluir dados de clientes; nao publique seu conteudo. Esses dados sao somente lidos, sem ativar logs globais ou reiniciar servicos.
