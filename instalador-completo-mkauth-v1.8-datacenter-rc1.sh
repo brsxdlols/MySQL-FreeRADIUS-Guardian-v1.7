@@ -37,7 +37,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Datacenter: Telegram fixo. Pergunta apenas o nome do MK-AUTH.
+# Credenciais Telegram nunca sao fixadas no repositorio; solicita quando ausentes.
 HOSTNAME_ATUAL="$(hostname 2>/dev/null || echo mk-auth)"
 DEFAULT_NAME="$HOSTNAME_ATUAL"
 
@@ -57,8 +57,17 @@ read -r NEW_MKAUTH_NAME
 MKAUTH_NAME="${NEW_MKAUTH_NAME:-$DEFAULT_NAME}"
 
 if [ "$USAR_TELEGRAM" = "sim" ]; then
+    if [ -z "$TELEGRAM_BOT" ]; then
+        printf "Token do bot Telegram (entrada oculta): "
+        IFS= read -r -s TELEGRAM_BOT
+        printf '\n'
+    fi
+    if [ -z "$TELEGRAM_CHAT_ID" ]; then
+        printf "Chat ID do Telegram: "
+        IFS= read -r TELEGRAM_CHAT_ID
+    fi
     if [ -z "$TELEGRAM_BOT" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-        echo "ERRO: Telegram está ativado, mas token ou Chat ID estão vazios."
+        echo "ERRO: Telegram ativado exige token e Chat ID."
         exit 1
     fi
 fi
