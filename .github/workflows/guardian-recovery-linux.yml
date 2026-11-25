@@ -1,0 +1,40 @@
+name: Guardian Recovery Linux CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'guardian-recovery-2026.11.25.1/**'
+      - 'instalador-guardian-recovery-2026.11.25.1.sh'
+      - '.github/workflows/guardian-recovery-linux.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  embedded-python37:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pull Python 3.7 test runtime
+        run: docker pull python:3.7.17-slim
+      - name: Validate exact embedded package and run its Linux tests
+        shell: bash
+        run: |
+          docker run -i --rm --network none --mount type=bind,source="$GITHUB_WORKSPACE",target=/repo,readonly python:3.7.17-slim python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          installer=Path('/repo/instalador-guardian-recovery-2026.11.25.1.sh')
+          source=installer.read_text()
+          needle='exec python3 "$DEST/install_frontend.py" "$@"'
+          assert source.count(needle)==1
+          subprocess.run(['bash','-n',str(installer)],check=True)
+          smoke=Path('/tmp/guardian-package-selftest.sh')
+          smoke.write_text(source.split(needle)[0])
+          subprocess.run(['bash',str(smoke)],check=True)
+          print('Embedded package validated; installer UI and service actions not invoked')
+          PY
