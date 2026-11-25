@@ -4,8 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - 'guardian-recovery-2026.11.24.1/**'
-      - 'instalador-guardian-recovery-2026.11.24.1.sh'
+      - 'guardian-recovery-2026.11.25.1/**'
+      - 'instalador-guardian-recovery-2026.11.25.1.sh'
       - '.github/workflows/guardian-recovery-linux.yml'
   workflow_dispatch:
 
@@ -28,7 +28,7 @@ jobs:
           docker run -i --rm --network none --mount type=bind,source="$GITHUB_WORKSPACE",target=/repo,readonly python:3.7.17-slim python - <<'PY'
           from pathlib import Path
           import subprocess
-          installer=Path('/repo/instalador-guardian-recovery-2026.11.24.1.sh')
+          installer=Path('/repo/instalador-guardian-recovery-2026.11.25.1.sh')
           source=installer.read_text()
           needle='exec python3 "$DEST/install_frontend.py" "$@"'
           assert source.count(needle)==1
